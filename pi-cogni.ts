@@ -57,7 +57,7 @@ function loadPromptFiles(): PromptFile[] {
 		return readdirSync(PROMPTS_DIR)
 			.filter((f) => extname(f).toLowerCase() === ".md")
 			.map((f) => ({
-				stem: basename(f, ".md").toLowerCase(),
+				stem: f.slice(0, -extname(f).length).toLowerCase(),
 				fullPath: join(PROMPTS_DIR, f),
 			}))
 			.filter((pf) => pf.stem.length > 0)
@@ -117,7 +117,9 @@ function findMatchingPrompts(
 	matched.sort(
 		(a, b) => b.stem.length - a.stem.length || a.stem.localeCompare(b.stem),
 	);
-	return matched;
+	// First match wins — return only the most specific fuzzy match
+	// to prevent layered conflicting instructions.
+	return matched.length > 0 ? [matched[0]] : [];
 }
 
 export default function piCogni(pi: ExtensionAPI) {

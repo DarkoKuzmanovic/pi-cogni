@@ -49,10 +49,11 @@ Drop a `.md` file in `~/.pi/agent/model-prompts/` named after the model ID:
 
 ```
 ~/.pi/agent/model-prompts/
-├── glm-5.1.md            # Matches wafer/GLM-5.1
-├── DeepSeek-V4-Pro.md    # Matches wafer/DeepSeek-V4-Pro
-├── MiniMax-M2.7.md       # Matches wafer/MiniMax-M2.7
-└── claude-sonnet.md      # Would match any Claude Sonnet model
+├── glm-5.1.md                # Matches wafer/GLM-5.1
+├── DeepSeek-V4-Pro.md        # Matches wafer/DeepSeek-V4-Pro
+├── MiniMax-M2.7.md           # Matches wafer/MiniMax-M2.7
+├── claude-opus-4-6.md        # Matches Anthropic/Claude Opus 4.6
+└── Qwen3.5-397B-A17B.md      # Matches Qwen3.5-397B-A17B
 ```
 
 ### Matching rules (first match wins)

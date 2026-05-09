@@ -18,12 +18,20 @@ echo "✓ Symlinked pi-cogni.ts → $EXT_DIR/pi-cogni.ts"
 
 # Symlink any coaching prompt .md files (skip README)
 count=0
+skipped=0
 for md in "$SCRIPT_DIR"/*.md; do
   [ -f "$md" ] || continue
   base="$(basename "$md")"
   [[ "$base" =~ ^README ]] && continue
-  ln -sfn "$md" "$PROMPTS_DIR/$base"
-  echo "  ✓ $base → $PROMPTS_DIR/$base"
+  target="$PROMPTS_DIR/$base"
+  # Warn if a real (non-symlink) file exists — don't silently overwrite
+  if [ -e "$target" ] && [ ! -L "$target" ]; then
+    echo "  ⚠ Skipping $base — real file exists at $target (not a symlink)"
+    ((skipped++)) || true
+    continue
+  fi
+  ln -sfn "$md" "$target"
+  echo "  ✓ $base → $target"
   ((count++)) || true
 done
 
@@ -32,6 +40,6 @@ if [ "$count" -eq 0 ]; then
 fi
 
 echo ""
-echo "Installed pi-cogni with $count model prompt(s)."
+echo "Installed pi-cogni with $count model prompt(s).${skipped:+ Skipped $skipped (existing non-symlink files).}"
 echo "Commands: /cogni — show which prompt matches the current model"
 echo "Restart Pi to pick up changes."
