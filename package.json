@@ -1,0 +1,54 @@
+{
+  "name": "pi-cogni",
+  "version": "1.0.0",
+  "description": "Cognitive coaching for AI models — injects per-model system prompt snippets that target each model's specific failure modes (sycophancy, narration, privilege escalation, etc.) identified through empirical diagnostic testing",
+  "author": "Darko Kuzmanovic",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DarkoKuzmanovic/pi-cogni.git"
+  },
+  "homepage": "https://github.com/DarkoKuzmanovic/pi-cogni#readme",
+  "bugs": {
+    "url": "https://github.com/DarkoKuzmanovic/pi-cogni/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "cognitive-coaching",
+    "model-prompts",
+    "ai",
+    "safety"
+  ],
+  "files": [
+    "pi-cogni.ts",
+    "pi-cogni.test.ts",
+    "*.md",
+    "install.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --experimental-strip-types --test pi-cogni.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "pi": {
+    "extensions": [
+      "./pi-cogni.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "typescript": "^5.8.0"
+  }
+}
