@@ -25,19 +25,8 @@ The extension loads `.md` files from `~/.pi/agent/model-prompts/` and appends th
 
 ## Install
 
-Add to `~/.pi/agent/settings.json`:
-
-```json
-{
-  "packages": [
-    {
-      "source": "/path/to/pi-cogni",
-      "extensions": [
-        "pi-cogni.ts"
-      ]
-    }
-  ]
-}
+```shell
+pi install git:github.com/DarkoKuzmanovic/pi-cogni
 ```
 
 Then restart Pi or run `/reload`.
