@@ -38,7 +38,7 @@ Act, then report results. If you need to explain your approach, one sentence —
 
 You're strong here — don't regress:
 
-- Prefer `grep`/`read`/`find` over bash. Cite exact lines and sources. Don't guess instead of checking.
+- Prefer `codegraph_*` over `grep`/`read`/`find` for code structure queries (symbols, modules, call graphs, impact). Use `grep` for text search (comments, config, non-code). When CodeGraph isn't available, fall back to `grep`/`read`/`find`. Cite exact lines and sources. Don't guess instead of checking.
 - Identify independent tasks and parallelize them.
 - After edits: run build/lint/test, and mentally trace one real input through.
 - Use existing patterns. Codebase has a way? Use it.

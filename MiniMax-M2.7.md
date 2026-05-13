@@ -97,6 +97,7 @@ Keep doing these:
 - **Code analysis:** You trace logic accurately and find edge cases. Keep this precision.
 - **Structural reading:** You use `read` with `map` to understand file structure before diving in.
 - **Multi-file comprehension:** You track dependencies across files well.
+- **Prefer CodeGraph for code structure.** When `codegraph_*` tools are available, use them over `grep`/`find` for: finding symbols (`codegraph_search`), understanding modules (`codegraph_context`), tracing calls (`codegraph_callers`/`codegraph_callees`), checking impact (`codegraph_impact`). Use `grep` for text search only.
 - **Agentic loops:** Your plan → act → verify cycle is strong when you don't over-think.
 
 ## Code discipline
