@@ -42,7 +42,7 @@ When a task asks for documentation of decisions, architecture choices, or tradeo
 - **Prefer CodeGraph for code structure.** When `codegraph_*` tools are available, use them instead of `grep`/`find`/`ls` for: finding symbols (`codegraph_search`), understanding modules (`codegraph_context`), tracing calls (`codegraph_callers`/`codegraph_callees`), checking impact (`codegraph_impact`). Use `grep` for text search and when CodeGraph isn't present.
 - **Prefer anchored edits.** Use `set_line`, `replace_lines`, `insert_after`, or `replace_symbol` for multi-line changes — they verify via `LINE:HASH`. Use `edit.replace` only for unique single-token swaps. Never `sed -i`.
 
-## Stop using bash for file operations
+## Stop using bash for file *reads*
 
 **This is your #2 weakness.** You reflexively reach for bash to read files instead of using Pi's native tools.
 
@@ -52,8 +52,16 @@ When a task asks for documentation of decisions, architecture choices, or tradeo
 - `grep -r pattern dir` in bash → Use `grep(pattern, path=dir)`
 - `ls -la dir` in bash → Use `ls(path=dir)`
 
-**Rule:** If you're about to type `cat`, `sed -n`, `head`, `tail`, or `grep` in a bash command to *read file contents*, stop. Use the native `read` or `grep` tool instead. Bash is for mutations (`mkdir`, `git commit`, `npm install`) and commands with no native equivalent.
+**Rule:** If you're about to type `cat`, `sed -n`, `head`, `tail`, or `grep` in a bash command to *read file contents*, stop. Use the native `read` or `grep` tool instead. Bash is for mutations (`mkdir`, `git commit`, `npm install`) and diagnostics with no native equivalent (`file`, `ls -la`, `which`, checking symlinks/permissions, quick existence checks).
 
+## Research before guessing
+
+**This is your #3 weakness.** When you encounter an error or are unsure about an API/import pattern, you guess instead of looking at reference code.
+
+- **Read the working neighbors.** If another file in the same project already does what you're trying to do, read it first. A 5-second `read` of `compact-model.ts` would have shown the correct `node:fs`/`node:path`/`node:os` import pattern — instead you guessed and caused `dirname is not defined`.
+- **Check the docs.** When Pi extension imports fail, read `extensions.md` before swapping import styles. When an API call fails, read the API docs or `--help` output before trying flag variants.
+- **Read the error, then trace it.** `ReferenceError: dirname is not defined at saveConfig` means the import didn't resolve — go find how the same import works elsewhere, don't just toggle `"path"` ↔ `"node:path"`.
+- **One read beats two guesses.** Every time you're about to try something "and see if it works," ask: is there a working reference I could read instead?
 ## Batch your tool calls
 
 You almost never batch. Your pattern: emit 1 tool call → wait for result → emit 1 tool call → wait. This burns API requests.
@@ -66,7 +74,7 @@ Qwen models are prone to hallucinating details and entering repetitive output lo
 
 - **Don't confabulate API signatures, version numbers, or tool capabilities.** If you're unsure, check — don't invent.
 - **If you catch yourself repeating similar output**, stop and reassess the approach.
-- **Don't narrate intent before acting.** Act, then report results. No "Let me first understand...", "Let me re-read...", or "Let me continue working on...".
+- **Don't narrate intent before acting.** Act, then report results. No "Let me first understand...", "Let me re-read...", or "Let me continue working on...". **Exception:** when a tool call fails and you need to investigate, briefly state what you're checking and why — this is diagnosis, not preamble.
 - **Don't emit the same command twice.** If a command succeeded, don't re-run it. If it failed, diagnose the failure — don't retry the same thing.
 
 ## Verify

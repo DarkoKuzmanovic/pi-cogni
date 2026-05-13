@@ -21,17 +21,26 @@ Generic prompt engineering treats all models the same. Cognitive coaching diagno
 3. **Coach** — write a `.md` file targeting the observed weaknesses
 4. **Verify** — re-run the tests to confirm the coaching works
 
-The extension loads the matching `.md` file and appends it to the system prompt at runtime.
+The extension loads `.md` files from `~/.pi/agent/model-prompts/` and appends the matching one to the system prompt at runtime. If the directory doesn't exist, the extension silently does nothing — create it and add prompt files there.
 
 ## Install
 
-```bash
-git clone https://github.com/DarkoKuzmanovic/pi-cogni.git ~/.pi/agent/git/github.com/DarkoKuzmanovic/pi-cogni
-cd ~/.pi/agent/git/github.com/DarkoKuzmanovic/pi-cogni
-chmod +x install.sh && ./install.sh
+Add to `~/.pi/agent/settings.json`:
+
+```json
+{
+  "packages": [
+    {
+      "source": "/path/to/pi-cogni",
+      "extensions": [
+        "pi-cogni.ts"
+      ]
+    }
+  ]
+}
 ```
 
-Then restart Pi.
+Then restart Pi or run `/reload`.
 
 ## Usage
 
@@ -44,6 +53,13 @@ Then restart Pi.
 Shows which coaching prompt file matches the current model.
 
 ### Add coaching for a new model
+
+The `.md` files in this repo are **samples** — they need to be copied to the active prompt directory to take effect:
+
+```bash
+mkdir -p ~/.pi/agent/model-prompts
+cp glm-5.1.md DeepSeek-V4-Pro.md ~/.pi/agent/model-prompts/
+```
 
 Drop a `.md` file in `~/.pi/agent/model-prompts/` named after the model ID:
 
