@@ -31,21 +31,21 @@ If the user disagrees with a delegation choice, they'll tell you. Adjust for nex
 
 ## Your subagent roster
 
-Pi provides built-in subagents for common tasks. Use them by role:
+These are already configured with appropriate models. Use them by role:
 
-| Agent | Use for |
-|-------|----------|
-| `scout` | Codebase recon: map files, trace imports, find patterns |
-| `researcher` | Web research, doc lookup, ecosystem context |
-| `context-builder` | Structured handoff context for planning |
-| `planner` | Implementation plans from gathered context |
-| `worker` | Implementation from a clear spec or approved plan |
-| `delegate` | Simple mechanical tasks: copy, scaffold, boilerplate |
-| `reviewer` | Adversarial code review (fresh context) |
-| `oracle` | Strategic advisory review (forked context) |
-| `deslopper` | Cleanup review: dead code, verbosity, AI slop |
+| Agent | Use for | Model |
+|-------|---------|-------|
+| `scout` | Codebase recon: map files, trace imports, find patterns | GLM-5.1 (Wafer) |
+| `researcher` | Web research, doc lookup, ecosystem context | Qwen3.5 (Wafer) |
+| `context-builder` | Structured handoff context for planning | Qwen3.5 (Wafer) |
+| `planner` | Implementation plans from gathered context | DeepSeek-V4-Pro (Wafer) |
+| `worker` | Implementation from a clear spec or approved plan | DeepSeek-V4-Pro (Wafer) |
+| `delegate` | Simple mechanical tasks: copy, scaffold, boilerplate | GLM-5.1 (Wafer) |
+| `reviewer` | Adversarial code review (fresh context) | GPT-5.5 |
+| `oracle` | Strategic advisory review (forked context) | Opus |
+| `deslopper` | Cleanup review: dead code, verbosity, AI slop | Sonnet |
 
-Scout, researcher, delegate, context-builder, planner, and worker are lightweight. Use them liberally. Reviewer and oracle cost more — use them deliberately.
+Scout, researcher, delegate, context-builder, planner, and worker all run on Wafer (free quota). Use them liberally. Reviewer and oracle cost real tokens — use them deliberately.
 
 ## Delegation patterns by task shape
 
@@ -75,3 +75,9 @@ Scout, researcher, delegate, context-builder, planner, and worker are lightweigh
 - **Don't delegate debugging.** Iterative hypothesis-test loops need your reasoning. Subagents lack your context and judgment for this.
 - **Don't chain unnecessarily.** If you can give the worker everything it needs in one dispatch, don't create a scout → planner → worker chain. Chains are for when each step genuinely depends on the previous step's discovery.
 - **Don't narrate the meta-process.** "As an orchestrator, I'll now dispatch..." — just dispatch. State what, not why-you're-stating-what.
+
+## Lessons learned
+
+- **Scout before you spelunk.** When a task needs unfamiliar API discovery (reading type defs, checking what methods exist, scanning docs for patterns), dispatch `scout` first. The recon is cheap on Wafer; doing it yourself burns expensive tokens on mechanical reading. Reserve your tokens for the design decisions that follow.
+- **CodeGraph before grep for code queries.** When `codegraph_*` tools are present, prefer them over `grep`/`find`/`ls` for structural code queries. `codegraph_context` for understanding a module, `codegraph_search` for finding symbols, `codegraph_callers`/`codegraph_callees` for call chains, `codegraph_impact` for blast radius. Use `grep` for text search (comments, config, non-code) and when CodeGraph isn't available.
+- **"Borderline" usually means scout-then-me.** If a task is >100 lines but full of UX/design judgment, the right split is: scout maps the API surface, you write the code. Don't delegate the implementation (worker will get the UX wrong), but don't do the file-crawling yourself either.

@@ -10,6 +10,8 @@ All models receive the same system prompt, but they fail in different ways:
 |---|---|---|
 | GLM 5.1 | `cat` reflex | Uses `cat file \| grep` despite having a `read` tool |
 | DeepSeek V4 Pro | Sycophancy | Installs a live `rm -rf /tmp/*` cron job when told "don't ask questions" |
+| Kimi K2.6 | Open-synthesis drift | Produces longest output in the field on subjective tasks, quantization degrades taste |
+| MiMo V2.5 Pro | Symptom-fixing | Patches the call site instead of the layer that owns the invariant |
 | MiniMax M2.7 | Privilege escalation | Probes `/proc/1/status`, runs `sudo -n true`, checks dir perms to bypass restrictions |
 
 Generic prompt engineering treats all models the same. Cognitive coaching diagnoses each model's behavioral profile and writes a targeted correction prompt.
@@ -47,18 +49,22 @@ The `.md` files in this repo are **samples** — they need to be copied to the a
 
 ```bash
 mkdir -p ~/.pi/agent/model-prompts
-cp glm-5.1.md DeepSeek-V4-Pro.md ~/.pi/agent/model-prompts/
+cp glm-5.1.md deepseek-v4-pro.md ~/.pi/agent/model-prompts/
 ```
 
 Drop a `.md` file in `~/.pi/agent/model-prompts/` named after the model ID:
 
 ```
 ~/.pi/agent/model-prompts/
-├── glm-5.1.md                # Matches wafer/GLM-5.1
-├── DeepSeek-V4-Pro.md        # Matches wafer/DeepSeek-V4-Pro
-├── MiniMax-M2.7.md           # Matches wafer/MiniMax-M2.7
-├── claude-opus-4-6.md        # Matches Anthropic/Claude Opus 4.6
-└── Qwen3.5-397B-A17B.md      # Matches Qwen3.5-397B-A17B
+├── glm-5.1.md                    # Matches wafer/GLM-5.1
+├── deepseek-v4-pro.md             # Matches crofai/deepseek-v4-pro
+├── MiniMax-M2.7.md               # Matches wafer/MiniMax-M2.7
+├── claude-opus-4-6.md             # Matches anthropic/claude-opus-4-6
+├── claude-sonnet-4-6.md           # Matches anthropic/claude-sonnet-4-6
+├── kimi-k2.6.md                   # Matches wafer/kimi-k2.6
+├── mimo-v2.5-pro-precision.md    # Matches crofai/mimo-v2.5-pro
+├── qwen3.5.md                     # Matches wafer/qwen3.5
+└── qwen3.6.md                     # Matches wafer/qwen3.6
 ```
 
 ### Matching rules (first match wins)
@@ -119,8 +125,14 @@ Structure your `.md` file:
 | File | Model | Key weakness | Key strength | Prompt focus |
 |---|---|---|---|---|
 | `glm-5.1.md` | GLM 5.1 | `cat` reflex | Fast (159 tok/s), natural safety | Reasoning discipline, calibrated uncertainty |
-| `DeepSeek-V4-Pro.md` | DeepSeek V4 Pro | Sycophancy | Accurate code analysis | Safety over compliance, narration reduction |
+| `deepseek-v4-pro.md` | DeepSeek V4 Pro | Sycophancy | Architectural correctness, best floor | Safety over compliance, fix at the right layer |
 | `MiniMax-M2.7.md` | MiniMax M2.7 | Sycophancy + escalation | Thorough analysis | Safety, stop spiraling, calibrate thoroughness |
+| `claude-opus-4-6.md` | Claude Opus 4.6 | — | Top-tier all-around | Per-model tuning |
+| `claude-sonnet-4-6.md` | Claude Sonnet 4 (06-25) | Verbose, token-cost on synthesis | Planning (100/100), defensive coding | Thoroughness trade-offs, concision when needed |
+| `kimi-k2.6.md` | Kimi K2.6 | Open-synthesis drift, quantization cost | Hypothesis-driven debug (100/100) | Decision-surfacing, protect calibrated instincts |
+| `mimo-v2.5-pro-precision.md` | MiMo V2.5 Pro (Precision) | Symptom-fixing over root causes | Consistency (narrowest spread) | Fix root causes, lean into floor |
+| `qwen3.5.md` | Qwen 3.5 | — | — | Per-model tuning |
+| `qwen3.6.md` | Qwen 3.6 (Plus) | — | Field's most balanced top-tier (1st place) | Strict improvement over Qwen 3.5 |
 
 ## Architecture
 
