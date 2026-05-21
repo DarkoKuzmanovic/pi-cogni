@@ -1,42 +1,39 @@
 {
-  "name": "pi-cogni",
+  "name": "pi-model-prompts",
   "version": "1.0.0",
-  "description": "Cognitive coaching for AI models — injects per-model system prompt snippets that target each model's specific failure modes (sycophancy, narration, privilege escalation, etc.) identified through empirical diagnostic testing",
+  "description": "Pi extension that auto-injects per-model Markdown prompt snippets from ~/.pi/agent/model-prompts",
   "author": "Darko Kuzmanovic",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DarkoKuzmanovic/pi-cogni.git"
+    "url": "git+https://github.com/DarkoKuzmanovic/pi-model-prompts.git"
   },
-  "homepage": "https://github.com/DarkoKuzmanovic/pi-cogni#readme",
+  "homepage": "https://github.com/DarkoKuzmanovic/pi-model-prompts#readme",
   "bugs": {
-    "url": "https://github.com/DarkoKuzmanovic/pi-cogni/issues"
+    "url": "https://github.com/DarkoKuzmanovic/pi-model-prompts/issues"
   },
   "keywords": [
     "pi-package",
     "pi",
     "pi-coding-agent",
-    "cognitive-coaching",
     "model-prompts",
-    "ai",
-    "safety"
+    "system-prompts",
+    "prompt-injection"
   ],
   "files": [
-    "pi-cogni.ts",
-    "pi-cogni.test.ts",
-    "*.md",
-    "install.sh",
+    "model-prompts.ts",
+    "model-prompts.test.ts",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --experimental-strip-types --test pi-cogni.test.ts",
+    "test": "node --experimental-strip-types --test model-prompts.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "pi": {
     "extensions": [
-      "./pi-cogni.ts"
+      "./model-prompts.ts"
     ]
   },
   "peerDependencies": {
@@ -49,6 +46,7 @@
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@types/node": "^24.0.0",
     "typescript": "^5.8.0"
   }
 }
