@@ -2,4 +2,5 @@
 .DS_Store
 AGENTS.md
 node_modules/
+package-lock.json
 .codegraph
