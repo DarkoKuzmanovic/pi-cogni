@@ -2,12 +2,16 @@
  * Tests for model-prompts matching logic.
  */
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { PromptFile } from "./model-prompts.ts";
 import {
 	findMatchingPrompts,
 	findPromptMatch,
 	analyzePromptFiles,
+	readPromptContent,
 } from "./model-prompts.ts";
 
 function pf(stem: string, content?: string): PromptFile {
@@ -203,5 +207,33 @@ describe("analyzePromptFiles", () => {
 		const warnings = analyzePromptFiles(files);
 		const emptyWarnings = warnings.filter((w) => w.type === "empty");
 		assert.equal(emptyWarnings.length, 2);
+	});
+});
+
+describe("readPromptContent freshness (C1)", () => {
+	it("reflects on-disk edits on a subsequent read (no stale cache)", () => {
+		const dir = mkdtempSync(join(tmpdir(), "mp-c1-"));
+		try {
+			const full = join(dir, "glm-5.1.md");
+			writeFileSync(full, "first version");
+			const file: PromptFile = { stem: "glm-5.1", fullPath: full };
+
+			assert.equal(readPromptContent(file), "first version");
+
+			// Simulate a mid-session edit to the prompt file.
+			writeFileSync(full, "second version");
+			assert.equal(
+				readPromptContent(file),
+				"second version",
+				"expected the edited content, not a memoized stale value",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("returns empty string for an unreadable/missing file", () => {
+		const file: PromptFile = { stem: "gone", fullPath: "/nonexistent/gone.md" };
+		assert.equal(readPromptContent(file), "");
 	});
 });

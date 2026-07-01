@@ -67,15 +67,18 @@ function loadPromptFiles(): PromptFile[] {
 	}
 }
 
-function readPromptContent(promptFile: PromptFile): string {
-	if (promptFile.content === undefined) {
-		try {
-			promptFile.content = readFileSync(promptFile.fullPath, "utf-8").trim();
-		} catch {
-			promptFile.content = "";
-		}
+export function readPromptContent(promptFile: PromptFile): string {
+	// Read fresh on every call so mid-session edits to a prompt file are
+	// reflected without a /reload (C1). The `content` field is still populated
+	// so analyzePromptFiles() can inspect it, but it is never used as a cache.
+	let content: string;
+	try {
+		content = readFileSync(promptFile.fullPath, "utf-8").trim();
+	} catch {
+		content = "";
 	}
-	return promptFile.content ?? "";
+	promptFile.content = content;
+	return content;
 }
 
 function computeContentHash(content: string): string {

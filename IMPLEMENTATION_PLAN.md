@@ -110,14 +110,31 @@ Splitting rule: rightmost `@` only (so `email@example.com.md` wouldn't break any
 
 ---
 
-## Open decisions (answer before implementing)
+## Open decisions — LOCKED 2026-07-02
 
-These four were raised in the brainstorm and not yet locked:
+Unparked; operator confirmed role-variants solve a real friction. All four locked:
 
-1. **Persistence scope** — persist `active.json` across Pi restarts (recommended) or session-only?
-2. **Cross-model state carryover** — switching `/model` mid-session should keep per-model variant state (recommended). State is keyed by `provider/model`, so this is automatic with persistent storage.
-3. **`/role` vs `/model-prompt` command name** — rename to `/role`, keep both as aliases, or keep `/model-prompt` only? I lean toward keep `/model-prompt` as the canonical name (it's accurate, doesn't conflate with `subagent` roles) and add `/role` as a shorter alias.
-4. **Fallback chain when active variant has no file** — silently fall back to default, or notify and fall back, or notify and inject nothing?
+1. **Persistence scope** — **LOCKED: persist `active.json` across restarts.**
+2. **Cross-model state carryover** — **LOCKED: keep per-model state** (automatic:
+   `active.json` is keyed by `provider/model`, so it follows from decision 1).
+3. **`/role` vs `/model-prompt`** — **LOCKED: rename to `/role` only** (operator
+   override of the parked lean). Consequences: `/role` absorbs the existing
+   diagnostics, so `list` / `test` / `default` become reserved subcommand
+   keywords and cannot be used as variant names. Removing `/model-prompt` is a
+   breaking surface change — kept in a minor (v1.1.0) as pre-adoption personal
+   tooling; no compatibility alias.
+4. **Fallback when active variant has no file** — **LOCKED: notify + fall back to
+   the default (no-`@`) file.** Never silent; never inject-nothing.
+
+Resolved `/role` grammar:
+
+| Command | Behavior |
+|---------|----------|
+| `/role` | Show current model, matched file, match type, and active variant. |
+| `/role list` | List variants across all models, active one marked. |
+| `/role test <p>/<m>` | Dry-run match (+ variant) without switching. |
+| `/role default` | Clear the active variant for the current model. |
+| `/role <name>` | Set active variant `<name>` for the current model. |
 
 ---
 
