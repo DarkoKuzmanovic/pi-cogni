@@ -8,12 +8,15 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { PromptFile } from "./model-prompts.ts";
 import {
+	activeVariantKey,
 	findMatchingPrompts,
 	findPromptMatch,
 	findVariantMatch,
 	analyzePromptFiles,
 	parsePromptFileName,
+	readActiveVariants,
 	readPromptContent,
+	writeActiveVariants,
 } from "./model-prompts.ts";
 
 function pf(stem: string, content?: string): PromptFile {
@@ -342,5 +345,54 @@ describe("findVariantMatch", () => {
 	it("returns undefined when only variant files exist and no variant is active", () => {
 		// No default file to inject; a role must be chosen explicitly.
 		assert.equal(findVariantMatch("wafer", "glm-5.1", [precision, worker]), undefined);
+	});
+});
+
+describe("active-variant persistence", () => {
+	it("builds a provider/model key", () => {
+		assert.equal(activeVariantKey("wafer", "glm-5.1"), "wafer/glm-5.1");
+	});
+
+	it("round-trips through disk", () => {
+		const dir = mkdtempSync(join(tmpdir(), "mp-active-"));
+		try {
+			const file = join(dir, "active.json");
+			assert.deepEqual(readActiveVariants(file), {}); // missing file
+			assert.equal(
+				writeActiveVariants(file, { "wafer/glm-5.1": "precision" }),
+				true,
+			);
+			assert.deepEqual(readActiveVariants(file), {
+				"wafer/glm-5.1": "precision",
+			});
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("creates the parent directory on write", () => {
+		const dir = mkdtempSync(join(tmpdir(), "mp-active-"));
+		try {
+			const file = join(dir, "nested", "active.json");
+			assert.equal(writeActiveVariants(file, { a: "b" }), true);
+			assert.deepEqual(readActiveVariants(file), { a: "b" });
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("ignores malformed json and non-string / array values", () => {
+		const dir = mkdtempSync(join(tmpdir(), "mp-active-"));
+		try {
+			const file = join(dir, "active.json");
+			writeFileSync(file, "{ not json");
+			assert.deepEqual(readActiveVariants(file), {});
+			writeFileSync(file, JSON.stringify({ ok: "x", bad: 3, empty: "" }));
+			assert.deepEqual(readActiveVariants(file), { ok: "x" });
+			writeFileSync(file, JSON.stringify(["a", "b"]));
+			assert.deepEqual(readActiveVariants(file), {});
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

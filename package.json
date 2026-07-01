@@ -1,7 +1,7 @@
 {
   "name": "pi-model-prompts",
-  "version": "1.0.0",
-  "description": "Pi extension that auto-injects per-model Markdown prompt snippets from ~/.pi/agent/model-prompts",
+  "version": "1.1.0",
+  "description": "Pi extension that auto-injects per-model Markdown prompt snippets from ~/.pi/agent/model-prompts, with switchable per-model roles via /role",
   "author": "Darko Kuzmanovic",
   "license": "MIT",
   "type": "module",

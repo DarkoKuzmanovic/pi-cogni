@@ -14,13 +14,24 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { basename, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const PROMPTS_DIR = join(homedir(), ".pi", "agent", "model-prompts");
+/** Persisted active-variant selections, keyed by `provider/model`. */
+const ACTIVE_FILE = join(PROMPTS_DIR, "active.json");
 const MIN_FUZZY_STEM_LENGTH = 3;
+/** Subcommand keywords that cannot be used as variant names. */
+const RESERVED_VARIANTS = new Set(["list", "test", "default"]);
 
 function normalize(s: string): string {
 	return s.replace(/[:/\\]/g, "-").toLowerCase();
@@ -249,6 +260,41 @@ export function findVariantMatch(
 	};
 }
 
+/** Storage key for a model's active variant. */
+export function activeVariantKey(provider: string, modelId: string): string {
+	return `${provider}/${modelId}`;
+}
+
+/** Read the active-variant map from disk; tolerant of missing/malformed files. */
+export function readActiveVariants(filePath: string): Record<string, string> {
+	try {
+		const parsed: unknown = JSON.parse(readFileSync(filePath, "utf-8"));
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			const out: Record<string, string> = {};
+			for (const [key, value] of Object.entries(parsed)) {
+				if (typeof value === "string" && value.length > 0) out[key] = value;
+			}
+			return out;
+		}
+	} catch {
+		// missing file or invalid JSON -> empty map
+	}
+	return {};
+}
+
+/** Persist the active-variant map. Returns false on write failure. */
+export function writeActiveVariants(
+	filePath: string,
+	map: Record<string, string>,
+): boolean {
+	try {
+		mkdirSync(dirname(filePath), { recursive: true });
+		writeFileSync(filePath, `${JSON.stringify(map, null, 2)}\n`);
+		return true;
+	} catch {
+		return false;
+	}
+}
 /**
  * Compatibility wrapper — returns PromptFile[] matching the old API.
  * Use findPromptMatch directly for richer diagnostics.
@@ -315,18 +361,58 @@ export function analyzePromptFiles(files: PromptFile[]): PromptWarning[] {
 	return warnings;
 }
 
+/** Format a resolved variant match for command output. */
+function formatMatch(
+	match: VariantMatch,
+	label: string,
+	withPreview: boolean,
+): string[] {
+	const content = readPromptContent(match.file);
+	const hash = content ? computeContentHash(content) : "empty";
+	const size = getFileSize(match.file);
+	const roleLine = match.variant
+		? `Role: ${match.variant}`
+		: match.requestedVariant
+			? `Role: ${match.requestedVariant} (no file \u2192 default)`
+			: "Role: (default)";
+	const out = [
+		label,
+		`Matched: ${basename(match.file.fullPath)}`,
+		`Type: ${match.matchType}`,
+		roleLine,
+		`Size: ${size}`,
+		`SHA256: ${hash}`,
+	];
+	if (withPreview) {
+		const preview =
+			content.length > 200 ? `${content.slice(0, 200)}...` : content;
+		out.push("Preview:", preview);
+	} else {
+		out.push(`Dir: ${PROMPTS_DIR}`);
+	}
+	return out;
+}
+
 export default function modelPrompts(pi: ExtensionAPI): void {
 	let promptFiles = loadPromptFiles();
+	let activeVariants = readActiveVariants(ACTIVE_FILE);
 
 	pi.on("session_start", async () => {
 		promptFiles = loadPromptFiles();
+		activeVariants = readActiveVariants(ACTIVE_FILE);
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const model = ctx.model;
 		if (!model) return;
 
-		const match = findPromptMatch(model.provider, model.id, promptFiles);
+		const active = activeVariants[activeVariantKey(model.provider, model.id)];
+		const match = findVariantMatch(
+			model.provider,
+			model.id,
+			promptFiles,
+			active,
+		);
 		if (!match) return;
 
 		const content = readPromptContent(match.file);
@@ -341,93 +427,80 @@ export default function modelPrompts(pi: ExtensionAPI): void {
 		};
 	});
 
-	pi.registerCommand("model-prompt", {
+	pi.registerCommand("role", {
 		description:
-			"Show per-model prompt match. Use 'list' to show all, 'test <p>/<m>' to dry-run.",
+			"Per-model prompt role. '/role <name>' switches variant; 'list', 'test <p>/<m>', 'default' also supported.",
 		handler: async (args, ctx) => {
 			promptFiles = loadPromptFiles();
+			activeVariants = readActiveVariants(ACTIVE_FILE);
 			const model = ctx.model;
 			const parts = args.trim().split(/\s+/).filter(Boolean);
+			const sub = parts[0]?.toLowerCase();
 
-			if (parts.length === 0) {
-				if (!model) {
-					ctx.ui.notify("No model selected", "warning");
-					return;
-				}
-				const key = `${model.provider}/${model.id}`;
-				const match = findPromptMatch(
-					model.provider,
-					model.id,
-					promptFiles,
-				);
-
-				if (!match) {
-					ctx.ui.notify(
-						`No model prompt for ${key}\nDir: ${PROMPTS_DIR}`,
-						"info",
-					);
-					return;
-				}
-
-				const content = readPromptContent(match.file);
-				const hash = content ? computeContentHash(content) : "empty";
-				const size = getFileSize(match.file);
-				ctx.ui.notify(
-					[
-						`Model: ${key}`,
-						`Matched: ${basename(match.file.fullPath)}`,
-						`Type: ${match.matchType}`,
-						`Size: ${size}`,
-						`SHA256: ${hash}`,
-						`Dir: ${PROMPTS_DIR}`,
-					].join("\n"),
-					"info",
-				);
-				return;
-			}
-
-			const cmd = parts[0].toLowerCase();
-
-			if (cmd === "list") {
+			// /role list — group by base stem, mark the current model's active variant
+			if (sub === "list") {
 				if (promptFiles.length === 0) {
-					ctx.ui.notify(
-						`No prompt files found in ${PROMPTS_DIR}`,
-						"info",
-					);
+					ctx.ui.notify(`No prompt files found in ${PROMPTS_DIR}`, "info");
 					return;
 				}
-
-				const lines = promptFiles.map((pf) => {
-					const content = readPromptContent(pf);
-					const status = content.length === 0 ? " [empty]" : "";
-					return `  ${basename(pf.fullPath)}${status}`;
-				});
-
-				const warnings = analyzePromptFiles(promptFiles);
-				const warnLines = warnings.map((w) => `  ⚠ ${w.message}`);
-				const msgLines: string[] = [
-					`Available prompt files (${promptFiles.length}):`,
-					...lines,
-				];
-				if (warnLines.length > 0) {
-					msgLines.push("", "Warnings:", ...warnLines);
+				const groups = new Map<string, PromptFile[]>();
+				for (const pf of promptFiles) {
+					const g = groups.get(pf.stem) ?? [];
+					g.push(pf);
+					groups.set(pf.stem, g);
 				}
-				ctx.ui.notify(
-					msgLines.join("\n"),
-					warnLines.length > 0 ? "warning" : "info",
-				);
+				const activeForModel = model
+					? activeVariants[activeVariantKey(model.provider, model.id)]
+					: undefined;
+				const currentMatch = model
+					? findVariantMatch(
+							model.provider,
+							model.id,
+							promptFiles,
+							activeForModel,
+						)
+					: undefined;
+				const lines: string[] = [];
+				for (const [stem, files] of [...groups.entries()].sort(([a], [b]) =>
+					a.localeCompare(b),
+				)) {
+					const isCurrent = currentMatch?.file.stem === stem;
+					lines.push(`  ${stem}${isCurrent ? " (current model)" : ""}`);
+					const sorted = [...files].sort((a, b) =>
+						(a.variant ?? "").localeCompare(b.variant ?? ""),
+					);
+					for (const f of sorted) {
+						const label = f.variant ?? "(default)";
+						const active =
+							isCurrent && currentMatch?.variant === f.variant
+								? " [active]"
+								: "";
+						const empty = readPromptContent(f).length === 0 ? " [empty]" : "";
+						const reserved =
+							f.variant && RESERVED_VARIANTS.has(f.variant)
+								? " [reserved name — unreachable]"
+								: "";
+						lines.push(`      ${label}${active}${empty}${reserved}`);
+					}
+				}
+				const warnings = analyzePromptFiles(promptFiles);
+				const msg = [`Prompt roles (${promptFiles.length} files):`, ...lines];
+				if (warnings.length > 0) {
+					msg.push("", "Warnings:", ...warnings.map((w) => `  ⚠ ${w.message}`));
+				}
+				ctx.ui.notify(msg.join("\n"), warnings.length > 0 ? "warning" : "info");
 				return;
 			}
 
-			if (cmd === "test") {
+			// /role test <p>/<m> — dry-run using that model's active variant
+			if (sub === "test") {
 				if (parts.length < 2) {
 					ctx.ui.notify(
-						"Usage: /model-prompt test <provider>/<model> or /model-prompt test <provider> <model>",
+						"Usage: /role test <provider>/<model>  (or <provider> <model>)",
 						"info",
 					);
 					return;
 				}
-
 				let testProvider: string;
 				let testModel: string;
 				if (parts[1].includes("/")) {
@@ -438,54 +511,110 @@ export default function modelPrompts(pi: ExtensionAPI): void {
 					testProvider = parts[1];
 					testModel = parts.slice(2).join(" ");
 				}
-
 				if (!testProvider || !testModel) {
 					ctx.ui.notify(
-						"Usage: /model-prompt test <provider>/<model> or /model-prompt test <provider> <model>",
+						"Usage: /role test <provider>/<model>  (or <provider> <model>)",
 						"info",
 					);
 					return;
 				}
-
-				const match = findPromptMatch(
+				const active =
+					activeVariants[activeVariantKey(testProvider, testModel)];
+				const match = findVariantMatch(
 					testProvider,
 					testModel,
 					promptFiles,
+					active,
 				);
-
 				if (!match) {
-					ctx.ui.notify(
-						`No match for ${testProvider}/${testModel}`,
-						"info",
-					);
+					ctx.ui.notify(`No match for ${testProvider}/${testModel}`, "info");
 					return;
 				}
-
-				const content = readPromptContent(match.file);
-				const hash = content ? computeContentHash(content) : "empty";
-				const size = getFileSize(match.file);
-				const preview =
-					content.length > 200
-						? content.slice(0, 200) + "..."
-						: content;
 				ctx.ui.notify(
-					[
-						`Test: ${testProvider}/${testModel}`,
-						`Matched: ${basename(match.file.fullPath)}`,
-						`Type: ${match.matchType}`,
-						`Size: ${size}`,
-						`SHA256: ${hash}`,
-						"Preview:",
-						preview,
-					].join("\n"),
+					formatMatch(match, `Test: ${testProvider}/${testModel}`, true).join(
+						"\n",
+					),
 					"info",
 				);
 				return;
 			}
 
-			// Unknown subcommand
+			// The remaining forms operate on the current model.
+			if (!model) {
+				ctx.ui.notify("No model selected", "warning");
+				return;
+			}
+			const key = activeVariantKey(model.provider, model.id);
+
+			// /role default — clear the active variant
+			if (sub === "default") {
+				if (activeVariants[key] === undefined) {
+					ctx.ui.notify(
+						`No active role for ${key}; already using default.`,
+						"info",
+					);
+					return;
+				}
+				delete activeVariants[key];
+				const ok = writeActiveVariants(ACTIVE_FILE, activeVariants);
+				ctx.ui.notify(
+					ok
+						? `Cleared role for ${key}; using default prompt.`
+						: `Failed to persist ${ACTIVE_FILE}`,
+					ok ? "info" : "error",
+				);
+				return;
+			}
+
+			// /role <name> — set the active variant
+			if (sub !== undefined) {
+				const name = sub;
+				const match = findVariantMatch(
+					model.provider,
+					model.id,
+					promptFiles,
+					name,
+				);
+				if (!match) {
+					ctx.ui.notify(
+						`No prompt matches ${key}; create a prompt file in ${PROMPTS_DIR} first.`,
+						"warning",
+					);
+					return;
+				}
+				activeVariants[key] = name;
+				if (!writeActiveVariants(ACTIVE_FILE, activeVariants)) {
+					ctx.ui.notify(`Failed to persist ${ACTIVE_FILE}`, "error");
+					return;
+				}
+				if (match.variantFallback) {
+					ctx.ui.notify(
+						`Role '${name}' set for ${key}, but ${match.file.stem}@${name}.md does not exist yet — injecting the default prompt until you create it.`,
+						"warning",
+					);
+				} else {
+					ctx.ui.notify(
+						`Role '${name}' active for ${key} (${basename(match.file.fullPath)}).`,
+						"info",
+					);
+				}
+				return;
+			}
+
+			// bare /role — show the current match
+			const active = activeVariants[key];
+			const match = findVariantMatch(
+				model.provider,
+				model.id,
+				promptFiles,
+				active,
+			);
+			if (!match) {
+				ctx.ui.notify(`No model prompt for ${key}\nDir: ${PROMPTS_DIR}`, "info");
+				return;
+			}
 			ctx.ui.notify(
-				"Usage:\n  /model-prompt          – show current match\n  /model-prompt list     – list available prompts\n  /model-prompt test <provider>/<model> – dry-run match",
+				formatMatch(match, `Model: ${key}`, false).join("\n"),
 				"info",
 			);
 		},

@@ -45,7 +45,7 @@ multi-turn + tie-break tests added; README matches `ls ~/.pi/agent/model-prompts
 CI green on a clean checkout.
 **Effort:** S (~1–2h). The C1 fix is a deletion, not new machinery.
 
-## v1.1.0 — per-model variants / `/role` picker (minor) — killer feature
+## v1.1.0 — per-model variants / `/role` picker (minor) — SHIPPED 2026-07-02
 
 **Ungated 2026-07-02: operator confirmed role-variants solve a friction they
 actually hit** (switching one model between orchestrator / worker / precision
