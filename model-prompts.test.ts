@@ -10,7 +10,9 @@ import type { PromptFile } from "./model-prompts.ts";
 import {
 	findMatchingPrompts,
 	findPromptMatch,
+	findVariantMatch,
 	analyzePromptFiles,
+	parsePromptFileName,
 	readPromptContent,
 } from "./model-prompts.ts";
 
@@ -235,5 +237,110 @@ describe("readPromptContent freshness (C1)", () => {
 	it("returns empty string for an unreadable/missing file", () => {
 		const file: PromptFile = { stem: "gone", fullPath: "/nonexistent/gone.md" };
 		assert.equal(readPromptContent(file), "");
+	});
+});
+
+describe("parsePromptFileName", () => {
+	it("parses a plain model file (no variant)", () => {
+		assert.deepEqual(parsePromptFileName("glm-5.1.md"), { stem: "glm-5.1" });
+	});
+
+	it("splits {model}@{variant}.md", () => {
+		assert.deepEqual(parsePromptFileName("glm-5.1@precision.md"), {
+			stem: "glm-5.1",
+			variant: "precision",
+		});
+	});
+
+	it("splits {provider}--{model}@{variant}.md", () => {
+		assert.deepEqual(parsePromptFileName("wafer--glm-5.1@worker.md"), {
+			stem: "wafer--glm-5.1",
+			variant: "worker",
+		});
+	});
+
+	it("lowercases stem and variant", () => {
+		assert.deepEqual(parsePromptFileName("GLM-5.1@Precision.md"), {
+			stem: "glm-5.1",
+			variant: "precision",
+		});
+	});
+
+	it("treats a trailing/leading @ (empty side) as a plain stem", () => {
+		assert.deepEqual(parsePromptFileName("glm-5.1@.md"), { stem: "glm-5.1@" });
+		assert.deepEqual(parsePromptFileName("@precision.md"), { stem: "@precision" });
+	});
+
+	it("ignores non-markdown and empty stems", () => {
+		assert.equal(parsePromptFileName("notes.txt"), undefined);
+		assert.equal(parsePromptFileName(".md"), undefined);
+	});
+});
+
+describe("findVariantMatch", () => {
+	const def: PromptFile = { stem: "glm-5.1", fullPath: "/p/glm-5.1.md" };
+	const precision: PromptFile = {
+		stem: "glm-5.1",
+		variant: "precision",
+		fullPath: "/p/glm-5.1@precision.md",
+	};
+	const worker: PromptFile = {
+		stem: "glm-5.1",
+		variant: "worker",
+		fullPath: "/p/glm-5.1@worker.md",
+	};
+
+	it("selects the default (no-variant) file when no variant is active", () => {
+		const m = findVariantMatch("wafer", "glm-5.1", [def, precision, worker]);
+		assert.equal(m?.file.fullPath, def.fullPath);
+		assert.equal(m?.variant, undefined);
+		assert.equal(m?.variantFallback, false);
+	});
+
+	it("selects the active variant file when one is set", () => {
+		const m = findVariantMatch("wafer", "glm-5.1", [def, precision, worker], "precision");
+		assert.equal(m?.file.fullPath, precision.fullPath);
+		assert.equal(m?.variant, "precision");
+		assert.equal(m?.variantFallback, false);
+	});
+
+	it("falls back to default and flags it when the active variant has no file", () => {
+		const m = findVariantMatch("wafer", "glm-5.1", [def, precision], "ghost");
+		assert.equal(m?.file.fullPath, def.fullPath);
+		assert.equal(m?.variant, undefined);
+		assert.equal(m?.requestedVariant, "ghost");
+		assert.equal(m?.variantFallback, true);
+	});
+
+	it("resolves variants at the exact-provider-model tier", () => {
+		const d: PromptFile = { stem: "wafer--glm-5.1", fullPath: "/p/wafer--glm-5.1.md" };
+		const p: PromptFile = {
+			stem: "wafer--glm-5.1",
+			variant: "precision",
+			fullPath: "/p/wafer--glm-5.1@precision.md",
+		};
+		const m = findVariantMatch("wafer", "glm-5.1", [d, p], "precision");
+		assert.equal(m?.matchType, "exact-provider-model");
+		assert.equal(m?.file.fullPath, p.fullPath);
+	});
+
+	it("resolves variants at the fuzzy tier", () => {
+		const p: PromptFile = {
+			stem: "glm-5.1",
+			variant: "precision",
+			fullPath: "/p/glm-5.1@precision.md",
+		};
+		const m = findVariantMatch("ollama", "glm-5.1:cloud", [def, p], "precision");
+		assert.equal(m?.matchType, "fuzzy");
+		assert.equal(m?.file.fullPath, p.fullPath);
+	});
+
+	it("returns undefined when nothing matches the model", () => {
+		assert.equal(findVariantMatch("wafer", "other-model", [def, precision]), undefined);
+	});
+
+	it("returns undefined when only variant files exist and no variant is active", () => {
+		// No default file to inject; a role must be chosen explicitly.
+		assert.equal(findVariantMatch("wafer", "glm-5.1", [precision, worker]), undefined);
 	});
 });

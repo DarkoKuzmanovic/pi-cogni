@@ -31,7 +31,10 @@ function escapeRegex(s: string): string {
 }
 
 export interface PromptFile {
+	/** Base stem with any `@variant` suffix stripped (used for matching). */
 	stem: string;
+	/** Variant name after `@`, or undefined for the default file. */
+	variant?: string;
 	fullPath: string;
 	content?: string;
 }
@@ -45,16 +48,39 @@ export interface PromptMatch {
 	normalizedProviderModel: string;
 }
 
+/**
+ * Split a prompt file name into its base stem and optional `@variant`.
+ * `glm-5.1@precision.md` -> { stem: "glm-5.1", variant: "precision" }.
+ * A leading/trailing `@` (empty side) is treated as part of a plain stem.
+ * Returns undefined for non-Markdown files or empty stems.
+ */
+export function parsePromptFileName(
+	fileName: string,
+): { stem: string; variant?: string } | undefined {
+	if (extname(fileName).toLowerCase() !== ".md") return undefined;
+	const base = fileName.slice(0, -extname(fileName).length).toLowerCase();
+	if (base.length === 0) return undefined;
+	const at = base.indexOf("@");
+	if (at <= 0 || at === base.length - 1) return { stem: base };
+	return { stem: base.slice(0, at), variant: base.slice(at + 1) };
+}
+
 function loadPromptFiles(): PromptFile[] {
 	if (!existsSync(PROMPTS_DIR)) return [];
 	try {
 		return readdirSync(PROMPTS_DIR)
-			.filter((fileName) => extname(fileName).toLowerCase() === ".md")
-			.map((fileName) => ({
-				stem: fileName.slice(0, -extname(fileName).length).toLowerCase(),
-				fullPath: join(PROMPTS_DIR, fileName),
-			}))
-			.filter((promptFile) => promptFile.stem.length > 0)
+			.map((fileName) => ({ fileName, parsed: parsePromptFileName(fileName) }))
+			.flatMap(({ fileName, parsed }) =>
+				parsed
+					? [
+							{
+								stem: parsed.stem,
+								variant: parsed.variant,
+								fullPath: join(PROMPTS_DIR, fileName),
+							} satisfies PromptFile,
+						]
+					: [],
+			)
 			.filter((promptFile) => {
 				try {
 					return statSync(promptFile.fullPath).isFile();
@@ -140,6 +166,86 @@ export function findPromptMatch(
 		matchType: "fuzzy",
 		normalizedModel,
 		normalizedProviderModel: normalizedFull,
+	};
+}
+
+/**
+ * A prompt match resolved through the variant layer.
+ */
+export interface VariantMatch extends PromptMatch {
+	/** The resolved variant, or undefined for the default (no-`@`) file. */
+	variant?: string;
+	/** The variant that was requested/active, if any. */
+	requestedVariant?: string;
+	/** True when the requested variant had no file and we fell back to default. */
+	variantFallback: boolean;
+}
+
+/**
+ * Match a model to a prompt file, honoring the active variant.
+ *
+ * Files are grouped by base stem; the standard tier logic
+ * (exact-provider-model -> exact-model -> fuzzy) picks the winning stem, then
+ * the variant is resolved within that group:
+ *   - active variant present with a file   -> that file
+ *   - active variant present, file missing  -> default file, variantFallback=true
+ *   - no active variant                     -> default file
+ * Returns undefined when no stem matches, or when the only files for the winning
+ * stem are variants and no variant is active (a role must be chosen explicitly).
+ */
+export function findVariantMatch(
+	provider: string,
+	modelId: string,
+	files: PromptFile[],
+	activeVariant?: string,
+): VariantMatch | undefined {
+	const groups = new Map<string, PromptFile[]>();
+	for (const file of files) {
+		const group = groups.get(file.stem);
+		if (group) group.push(file);
+		else groups.set(file.stem, [file]);
+	}
+
+	const representatives: PromptFile[] = [...groups.keys()].map((stem) => ({
+		stem,
+		fullPath: "",
+	}));
+	const base = findPromptMatch(provider, modelId, representatives);
+	if (!base) return undefined;
+
+	const group = groups.get(base.file.stem) ?? [];
+	const defaultFile = group.find((file) => file.variant === undefined);
+
+	if (activeVariant) {
+		const wanted = group.find((file) => file.variant === activeVariant);
+		if (wanted) {
+			return {
+				...base,
+				file: wanted,
+				variant: activeVariant,
+				requestedVariant: activeVariant,
+				variantFallback: false,
+			};
+		}
+		if (defaultFile) {
+			return {
+				...base,
+				file: defaultFile,
+				variant: undefined,
+				requestedVariant: activeVariant,
+				variantFallback: true,
+			};
+		}
+		return undefined;
+	}
+
+	if (!defaultFile) return undefined;
+	return {
+		...base,
+		file: defaultFile,
+		variant: undefined,
+		requestedVariant: undefined,
+		variantFallback: false,
 	};
 }
 
