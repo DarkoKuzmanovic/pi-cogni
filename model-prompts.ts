@@ -413,7 +413,15 @@ export default function modelPrompts(pi: ExtensionAPI): void {
 			promptFiles,
 			active,
 		);
-		if (!match) return;
+		if (!match) {
+			ctx.ui.setStatus("model-prompts", undefined);
+			return;
+		}
+
+		ctx.ui.setStatus(
+			"model-prompts",
+			`role: ${match.variant ?? "default"}`,
+		);
 
 		const content = readPromptContent(match.file);
 		if (content.length === 0) return;
@@ -601,20 +609,56 @@ export default function modelPrompts(pi: ExtensionAPI): void {
 				return;
 			}
 
-			// bare /role — show the current match
+			// bare /role — interactive picker of the current model's roles
 			const active = activeVariants[key];
-			const match = findVariantMatch(
+			const probe = findVariantMatch(
 				model.provider,
 				model.id,
 				promptFiles,
 				active,
 			);
-			if (!match) {
+			if (!probe) {
 				ctx.ui.notify(`No model prompt for ${key}\nDir: ${PROMPTS_DIR}`, "info");
 				return;
 			}
+			const group = promptFiles.filter((f) => f.stem === probe.file.stem);
+			const hasDefault = group.some((f) => f.variant === undefined);
+			const variants = group
+				.map((f) => f.variant)
+				.filter((v): v is string => v !== undefined)
+				.sort((a, b) => a.localeCompare(b));
+			const options = [...(hasDefault ? ["default"] : []), ...variants];
+			const currentLabel = active ?? "default";
+			const labeled = options.map((o) =>
+				o === currentLabel ? `${o} (active)` : o,
+			);
+			const picked = await ctx.ui.select(`Role for ${key}:`, labeled);
+			if (picked === undefined) {
+				// cancelled — just report the current match
+				ctx.ui.notify(
+					formatMatch(probe, `Model: ${key}`, false).join("\n"),
+					"info",
+				);
+				return;
+			}
+			const choice = picked.replace(/ \(active\)$/, "");
+			if (choice === "default") delete activeVariants[key];
+			else activeVariants[key] = choice;
+			if (!writeActiveVariants(ACTIVE_FILE, activeVariants)) {
+				ctx.ui.notify(`Failed to persist ${ACTIVE_FILE}`, "error");
+				return;
+			}
+			const resolved = findVariantMatch(
+				model.provider,
+				model.id,
+				promptFiles,
+				choice === "default" ? undefined : choice,
+			);
+			ctx.ui.setStatus("model-prompts", `role: ${choice}`);
 			ctx.ui.notify(
-				formatMatch(match, `Model: ${key}`, false).join("\n"),
+				resolved
+					? formatMatch(resolved, `Role set for ${key}`, false).join("\n")
+					: `Role '${choice}' set for ${key}.`,
 				"info",
 			);
 		},

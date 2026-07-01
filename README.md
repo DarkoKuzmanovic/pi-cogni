@@ -79,9 +79,11 @@ used as variant names.
 
 ### `/role`
 
-Show the current model, which prompt file matched, the match type, active role,
-file size, SHA-256 (short 12-char hash), and the prompts directory. If no match
-is found, displays a "no match" message with the prompts directory.
+Opens an interactive picker of the current model's roles (`default` plus every
+`@variant`), with the active one marked. Selecting one applies and persists it;
+cancelling shows the current match details (matched file, match type, active
+role, size, SHA-256, prompts directory). When a role is active it also shows in
+the footer as `role: <name>`.
 
 ### `/role <name>`
 
