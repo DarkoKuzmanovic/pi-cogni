@@ -17,6 +17,9 @@ import {
 	readActiveVariants,
 	readPromptContent,
 	writeActiveVariants,
+	hasModelPromptsBlock,
+	SENTINEL_BEGIN_PREFIX,
+	setRoleStatus,
 } from "./model-prompts.ts";
 
 function pf(stem: string, content?: string): PromptFile {
@@ -394,5 +397,129 @@ describe("active-variant persistence", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("hasModelPromptsBlock", () => {
+	it("returns true when a begin marker is anywhere in the prompt", () => {
+		const prompt = `Some preamble\n\n<!-- model-prompts: begin x.md -->\ncontent\n<!-- model-prompts: end x.md -->`;
+		assert.equal(hasModelPromptsBlock(prompt), true);
+	});
+
+	it("returns false for empty string", () => {
+		assert.equal(hasModelPromptsBlock(""), false);
+	});
+
+	it("returns false for undefined", () => {
+		assert.equal(hasModelPromptsBlock(undefined), false);
+	});
+
+	it("returns false for a plain prompt without the sentinel", () => {
+		const prompt = "Just a regular system prompt with no model-prompts block";
+		assert.equal(hasModelPromptsBlock(prompt), false);
+	});
+
+	it("returns false for a prompt containing only the end marker", () => {
+		const prompt = "Some text containing <!-- model-prompts: end x.md --> but no begin";
+		assert.equal(hasModelPromptsBlock(prompt), false);
+	});
+
+	it("returns false for a begin marker without an end marker (doc mention)", () => {
+		const prompt =
+			"Here is how <!-- model-prompts: begin markers work in the extension.";
+		assert.equal(hasModelPromptsBlock(prompt), false);
+	});
+
+	it("requires both markers: begin-only injected-looking line is not a block", () => {
+		const prompt = `preamble\n<!-- model-prompts: begin x.md -->\ncontent without end marker`;
+		assert.equal(hasModelPromptsBlock(prompt), false);
+	});
+
+	it("returns true for a full wrapped block", () => {
+		const prompt = `Base prompt\n\n<!-- model-prompts: begin foo@worker.md -->\ninjected content\n<!-- model-prompts: end foo@worker.md -->`;
+		assert.equal(hasModelPromptsBlock(prompt), true);
+	});
+});
+
+describe("SENTINEL_BEGIN_PREFIX format", () => {
+	it("renders correctly when composed with filename", () => {
+		const fileName = "minimax-m3@worker.md";
+		const composed = `${SENTINEL_BEGIN_PREFIX} ${fileName} -->`;
+		assert.equal(composed, "<!-- model-prompts: begin minimax-m3@worker.md -->");
+	});
+
+	it("matches the guard detection substring", () => {
+		const prompt = `<!-- model-prompts: begin x.md -->\nsome content\n<!-- model-prompts: end x.md -->`;
+		assert.ok(prompt.includes(SENTINEL_BEGIN_PREFIX));
+	});
+});
+
+describe("setRoleStatus (early-bootstrap HUD status)", () => {
+const worker: PromptFile = {
+		stem: "wafer--glm-5.1",
+		variant: "worker",
+		fullPath: "/p/wafer--glm-5.1@worker.md",
+		content: "worker body",
+	};
+	const precision: PromptFile = {
+		stem: "wafer--glm-5.1",
+		variant: "precision",
+		fullPath: "/p/wafer--glm-5.1@precision.md",
+		content: "precision body",
+	};
+	const def: PromptFile = pf("wafer--glm-5.1", "default body");
+
+	function makeCtx() {
+		const calls: Array<[string, string | undefined]> = [];
+		return {
+			ctx: {
+				ui: {
+					setStatus: (key: string, text: string | undefined) => {
+						calls.push([key, text]);
+					},
+				},
+			},
+			calls,
+		};
+	}
+
+	it("sets 'role: <variant>' and returns the match when a variant is active", () => {
+		const { ctx, calls } = makeCtx();
+		const result = setRoleStatus(
+			{ provider: "wafer", id: "glm-5.1" },
+			[def, precision, worker],
+			{ "wafer/glm-5.1": "precision" },
+			ctx,
+		);
+		assert.equal(calls.length, 1);
+		assert.deepEqual(calls[0], ["model-prompts", "role: precision"]);
+		assert.ok(result);
+assert.equal(result?.file.stem, "wafer--glm-5.1");
+		assert.equal(result?.variant, "precision");
+	});
+
+	it("sets 'role: default' when the default file matches and no variant is active", () => {
+		const { ctx, calls } = makeCtx();
+		const result = setRoleStatus(
+			{ provider: "wafer", id: "glm-5.1" },
+			[def, precision],
+			{},
+			ctx,
+		);
+		assert.deepEqual(calls[0], ["model-prompts", "role: default"]);
+		assert.ok(result);
+		assert.equal(result?.file.stem, "wafer--glm-5.1");
+	});
+
+	it("sets undefined and returns null when nothing matches", () => {
+		const { ctx, calls } = makeCtx();
+		const result = setRoleStatus(
+			{ provider: "wafer", id: "unknown-model" },
+			[def, precision, worker],
+			{},
+			ctx,
+		);
+		assert.deepEqual(calls[0], ["model-prompts", undefined]);
+		assert.equal(result, null);
 	});
 });

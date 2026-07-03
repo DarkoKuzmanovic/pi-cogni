@@ -32,6 +32,9 @@ const ACTIVE_FILE = join(PROMPTS_DIR, "active.json");
 const MIN_FUZZY_STEM_LENGTH = 3;
 /** Subcommand keywords that cannot be used as variant names. */
 const RESERVED_VARIANTS = new Set(["list", "test", "default"]);
+/** Sentinel prefixes to detect if a model-prompts block is already injected. */
+export const SENTINEL_BEGIN_PREFIX = "<!-- model-prompts: begin";
+export const SENTINEL_END_PREFIX = "<!-- model-prompts: end";
 
 function normalize(s: string): string {
 	return s.replace(/[:/\\]/g, "-").toLowerCase();
@@ -39,6 +42,20 @@ function normalize(s: string): string {
 
 function escapeRegex(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Check if a system prompt already contains a model-prompts block.
+ * Requires BOTH the begin and end sentinel markers: an injected block always
+ * carries both, while a prompt merely mentioning one marker (docs, examples)
+ * does not. Casual text containing both full markers can still false-trigger;
+ * accepted as a negligible collision surface.
+ */
+export function hasModelPromptsBlock(systemPrompt: string | undefined): boolean {
+	const prompt = systemPrompt ?? "";
+	return (
+		prompt.includes(SENTINEL_BEGIN_PREFIX) && prompt.includes(SENTINEL_END_PREFIX)
+	);
 }
 
 export interface PromptFile {
@@ -392,49 +409,82 @@ function formatMatch(
 	}
 	return out;
 }
+/**
+ * Resolve the active role for `model` and surface it as the "model-prompts"
+ * UI status. Used by both session_start (model known, no systemPrompt yet)
+ * and the non-sentinel path of before_agent_start. Idempotent apart from the
+ * redundant setStatus call. Duck-typed to avoid importing Model<any> from
+ * the host package just for a helper signature.
+ */
+export function setRoleStatus(
+	model: { provider: string; id: string },
+	promptFiles: PromptFile[],
+	activeVariants: Record<string, string>,
+	ctx: { ui: { setStatus(key: string, text: string | undefined): void } },
+): VariantMatch | null {
+	const active = activeVariants[activeVariantKey(model.provider, model.id)];
+	const match = findVariantMatch(
+		model.provider,
+		model.id,
+		promptFiles,
+		active,
+	);
+	if (!match) {
+		ctx.ui.setStatus("model-prompts", undefined);
+		return null;
+	}
+	ctx.ui.setStatus(
+		"model-prompts",
+		`role: ${match.variant ?? "default"}`,
+	);
+	return match;
+}
 
 export default function modelPrompts(pi: ExtensionAPI): void {
 	let promptFiles = loadPromptFiles();
 	let activeVariants = readActiveVariants(ACTIVE_FILE);
 
-	pi.on("session_start", async () => {
+	pi.on("session_start", async (_event, ctx) => {
 		promptFiles = loadPromptFiles();
 		activeVariants = readActiveVariants(ACTIVE_FILE);
+		// Surface the active role in the HUD before the first message so
+		// pi-hud can render the role chip from turn zero. before_agent_start
+		// will re-run this on every turn (and handle the sentinel case), so
+		// this is purely an early-bootstrap setStatus.
+		if (ctx.model) setRoleStatus(ctx.model, promptFiles, activeVariants, ctx);
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const model = ctx.model;
 		if (!model) return;
 
-		const active = activeVariants[activeVariantKey(model.provider, model.id)];
-		const match = findVariantMatch(
-			model.provider,
-			model.id,
-			promptFiles,
-			active,
-		);
-		if (!match) {
-			ctx.ui.setStatus("model-prompts", undefined);
+		// Guard against duplicate injection: if a model-prompts block is already
+		// present (e.g. injected by a dispatching supervisor like pi-subagents),
+		// surface that and return early before matching/injecting.
+		if (hasModelPromptsBlock(event.systemPrompt)) {
+			ctx.ui.setStatus("model-prompts", "role: external");
 			return;
 		}
 
-		ctx.ui.setStatus(
-			"model-prompts",
-			`role: ${match.variant ?? "default"}`,
+		const match = setRoleStatus(
+			model,
+			promptFiles,
+			activeVariants,
+			ctx,
 		);
+		if (!match) return;
 
 		const content = readPromptContent(match.file);
 		if (content.length === 0) return;
 
 		const name = basename(match.file.fullPath);
-		const body = `<!-- model-prompts: begin ${name} -->\n${content}\n<!-- model-prompts: end ${name} -->`;
+		const body = `${SENTINEL_BEGIN_PREFIX} ${name} -->\n${content}\n${SENTINEL_END_PREFIX} ${name} -->`;
 
 		const base = event.systemPrompt ?? "";
 		return {
 			systemPrompt: base ? `${base}\n\n${body}` : body,
 		};
 	});
-
 	pi.registerCommand("role", {
 		description:
 			"Per-model prompt role. '/role <name>' switches variant; 'list', 'test <p>/<m>', 'default' also supported.",
