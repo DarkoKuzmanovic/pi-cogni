@@ -483,7 +483,7 @@ const worker: PromptFile = {
 		};
 	}
 
-	it("sets 'role: <variant>' and returns the match when a variant is active", () => {
+	it("sets icon-prefixed status and returns the match when a variant is active", () => {
 		const { ctx, calls } = makeCtx();
 		const result = setRoleStatus(
 			{ provider: "wafer", id: "glm-5.1" },
@@ -492,13 +492,13 @@ const worker: PromptFile = {
 			ctx,
 		);
 		assert.equal(calls.length, 1);
-		assert.deepEqual(calls[0], ["model-prompts", "role: precision"]);
+		assert.deepEqual(calls[0], ["model-prompts", "󰯂 precision"]);
 		assert.ok(result);
 assert.equal(result?.file.stem, "wafer--glm-5.1");
 		assert.equal(result?.variant, "precision");
 	});
 
-	it("sets 'role: default' when the default file matches and no variant is active", () => {
+	it("sets icon-prefixed default status when the default file matches", () => {
 		const { ctx, calls } = makeCtx();
 		const result = setRoleStatus(
 			{ provider: "wafer", id: "glm-5.1" },
@@ -506,7 +506,7 @@ assert.equal(result?.file.stem, "wafer--glm-5.1");
 			{},
 			ctx,
 		);
-		assert.deepEqual(calls[0], ["model-prompts", "role: default"]);
+		assert.deepEqual(calls[0], ["model-prompts", "󰯂 default"]);
 		assert.ok(result);
 		assert.equal(result?.file.stem, "wafer--glm-5.1");
 	});

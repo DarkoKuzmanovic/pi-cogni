@@ -435,7 +435,7 @@ export function setRoleStatus(
 	}
 	ctx.ui.setStatus(
 		"model-prompts",
-		`role: ${match.variant ?? "default"}`,
+		`\udb82\udfc2 ${match.variant ?? "default"}`,
 	);
 	return match;
 }
@@ -462,7 +462,7 @@ export default function modelPrompts(pi: ExtensionAPI): void {
 		// present (e.g. injected by a dispatching supervisor like pi-subagents),
 		// surface that and return early before matching/injecting.
 		if (hasModelPromptsBlock(event.systemPrompt)) {
-			ctx.ui.setStatus("model-prompts", "role: external");
+			ctx.ui.setStatus("model-prompts", "\udb82\udfc2 external");
 			return;
 		}
 
@@ -704,7 +704,7 @@ export default function modelPrompts(pi: ExtensionAPI): void {
 				promptFiles,
 				choice === "default" ? undefined : choice,
 			);
-			ctx.ui.setStatus("model-prompts", `role: ${choice}`);
+			ctx.ui.setStatus("model-prompts", `\udb82\udfc2 ${choice}`);
 			ctx.ui.notify(
 				resolved
 					? formatMatch(resolved, `Role set for ${key}`, false).join("\n")
