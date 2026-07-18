@@ -185,7 +185,7 @@ Touch points:
 
 ## When picking this back up
 
-1. Read `~/.pi/agent/extensions/model-prompts/model-prompts.ts` (current implementation).
+1. Read `~/.pi/agent/extensions/pi-model-prompts/model-prompts.ts` (current implementation).
 2. Re-read this file.
 3. Lock the four open decisions above (5 minutes).
 4. Read `~/.nvm/versions/node/v24.12.0/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md` §Dialogs and §Commands to verify the API shapes haven't drifted.
