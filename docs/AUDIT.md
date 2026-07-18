@@ -8,7 +8,7 @@ command that was actually run.
 ## 2026-07-02
 
 **Scope reviewed:** `model-prompts.ts` (385 lines), `model-prompts.test.ts`,
-`README.md`, `IMPLEMENTATION_PLAN.md`, `package.json`.
+`README.md`, `docs/SPEC.md`, `package.json`.
 **Operator friction supplied:** *"want to create something more useful"* — a
 direction steer, not a concrete usage friction. Killer-feature confidence is
 lowered accordingly (no observed pain points, only a "make it bigger" cue).
@@ -49,10 +49,11 @@ fresh each user prompt, so re-appending does **not** accumulate across turns
    sample directory (`kimi-k2.6.md`, `mimo-v2.5-pro-precision.md`,
    `deepseek-v4-pro-precision.md`) that does **not** match the live directory
    (`claude-*.md`, `deepseek-v4-pro.md`, `minimax-m3.md`, `umans-*.md`, verified
-   via `ls ~/.pi/agent/model-prompts`). `IMPLEMENTATION_PLAN.md:176,182`
-   references `mimo-v2.5-pro-precision.md` as a live cleanup target, but that
-   file is already gone — the cleanup task is moot. Stale examples mislead the
-   next reader about the contract.
+   via `ls ~/.pi/agent/model-prompts`). The old `IMPLEMENTATION_PLAN.md:176,182`
+   cleanup-task section referenced `mimo-v2.5-pro-precision.md` as a live cleanup
+   target, but that file was already gone and the cleanup-task section itself
+   was removed during the 2026-07-19 canonical-convention migration (now
+   `docs/SPEC.md`). Stale examples mislead the next reader about the contract.
 
 3. **No CI / isolated typecheck** — severity low × effort S. There is no
    `.github/workflows`, and `npm run typecheck` cannot run without a local
@@ -64,10 +65,11 @@ fresh each user prompt, so re-appending does **not** accumulate across turns
 
 Confidence: **medium-low** (no concrete friction supplied; steer was "more
 useful"). The single highest-leverage feature is **already designed and parked**
-in `IMPLEMENTATION_PLAN.md`:
+in `docs/SPEC.md` (formerly `IMPLEMENTATION_PLAN.md`, reorganized during the
+2026-07-19 canonical-convention migration):
 
 - **Primary — per-model prompt variants / `/role` picker.** Today one model = one
-  file. The plan (`IMPLEMENTATION_PLAN.md:1-183`) adds `{model}@{variant}.md`
+  file. The plan (`docs/SPEC.md`) adds `{model}@{variant}.md`
   naming, a `/role` TUI picker, a persisted `active.json`, and a status footer,
   so one model can carry switchable roles (orchestrator / worker / precision).
   It has acceptance criteria and a test plan already written. Tradeoff: +~150
@@ -123,11 +125,11 @@ in `IMPLEMENTATION_PLAN.md`:
 2. Add a minimal GitHub Actions workflow: `npm ci`, `node --test`,
    `npx tsc --noEmit`.
 3. Document in README that prompt-file edits need `/reload` (or running
-   `/model-prompt`) to take effect — until hot-reload lands.
-4. Add a one-line note to `IMPLEMENTATION_PLAN.md` that the
-   `mimo-v2.5-pro-precision.md` cleanup task (lines 176, 182) is already done
-   (file removed).
-5. Surface that `/model-prompt` reloads the file list as a documented side
+   `/role`) to take effect — until hot-reload lands.
+4. [RESOLVED 2026-07-19 during canonical-convention migration] The cleanup-task
+   section was removed when `IMPLEMENTATION_PLAN.md` migrated to `docs/SPEC.md`;
+   no note needed — the section is gone, not just moot.
+5. Surface that `/role` reloads the file list as a documented side
    effect (it already does, `model-prompts.ts:239`) — cheap manual staleness
    escape hatch.
 
