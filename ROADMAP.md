@@ -19,4 +19,6 @@ live in `docs/AUDIT.md`. Locked design decisions live in [`DECISIONS.md`](./DECI
 
 ## Planned
 
-(none — candidate backlog lives in [`IDEAS.md`](./IDEAS.md))
+- **Argument completions for `/role`** — complete variant names discovered in `~/.pi/agent/model-prompts/`, plus the `list`, `default`, and `test <provider>/<model>` verbs, via `getArgumentCompletions`; add a round-trip test asserting every suggestion the completer offers is accepted by the parser.
+
+Further candidate backlog lives in [`IDEAS.md`](./IDEAS.md).
