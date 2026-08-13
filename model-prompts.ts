@@ -36,6 +36,32 @@ const RESERVED_VARIANTS = new Set(["list", "test", "default"]);
 export const SENTINEL_BEGIN_PREFIX = "<!-- model-prompts: begin";
 export const SENTINEL_END_PREFIX = "<!-- model-prompts: end";
 
+/**
+ * pi-subagents sets these on every child subagent process. When present, the
+ * child should prefer the role variant named after the agent (e.g. `@worker`)
+ * over the persisted `/role` selection, so a deepseek worker subagent gets the
+ * worker-tuned prompt while the interactive driving session keeps its default.
+ */
+const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
+const SUBAGENT_CHILD_AGENT_ENV = "PI_SUBAGENT_CHILD_AGENT";
+
+/**
+ * Resolve the effective role variant for the current run.
+ *
+ * In a subagent child process, the agent's role wins over the persisted
+ * `/role` selection: the child is running as `worker`, so it should load the
+ * `{stem}@worker.md` variant (e.g. `deepseek-v4-flash@worker.md`) rather than
+ * the interactive default. Falls back to the persisted active variant when not
+ * a subagent child, or when no agent name is set.
+ */
+export function resolveSubagentVariant(): string | undefined {
+	if (process.env[SUBAGENT_CHILD_ENV] === "1") {
+		const agent = process.env[SUBAGENT_CHILD_AGENT_ENV];
+		if (agent && !RESERVED_VARIANTS.has(agent)) return agent;
+	}
+	return undefined;
+}
+
 function normalize(s: string): string {
 	return s.replace(/[:/\\]/g, "-").toLowerCase();
 }
@@ -207,6 +233,12 @@ export interface VariantMatch extends PromptMatch {
 	requestedVariant?: string;
 	/** True when the requested variant had no file and we fell back to default. */
 	variantFallback: boolean;
+	/**
+	 * True when the winning stem has only `@variant` files (no base) and no
+	 * active role was set, so a variant was used as the driving default.
+	 * Surfaces a HUD warning — silent no-injection used to be the outcome.
+	 */
+	missingBaseFallback: boolean;
 }
 
 /**
@@ -218,8 +250,12 @@ export interface VariantMatch extends PromptMatch {
  *   - active variant present with a file   -> that file
  *   - active variant present, file missing  -> default file, variantFallback=true
  *   - no active variant                     -> default file
- * Returns undefined when no stem matches, or when the only files for the winning
- * stem are variants and no variant is active (a role must be chosen explicitly).
+ *   - no active variant, no default, only variants -> lexicographically first
+ *     variant as a temporary driving default (missingBaseFallback=true).
+ *     Prefer creating a base `<stem>.md`; this fallback exists so a
+ *     variant-only stem never silently injects nothing (luna@worker class).
+ * Returns undefined when no stem matches, or when an active variant is set
+ * but neither that variant nor a default file exists.
  */
 export function findVariantMatch(
 	provider: string,
@@ -253,6 +289,7 @@ export function findVariantMatch(
 				variant: activeVariant,
 				requestedVariant: activeVariant,
 				variantFallback: false,
+				missingBaseFallback: false,
 			};
 		}
 		if (defaultFile) {
@@ -262,18 +299,38 @@ export function findVariantMatch(
 				variant: undefined,
 				requestedVariant: activeVariant,
 				variantFallback: true,
+				missingBaseFallback: false,
 			};
 		}
 		return undefined;
 	}
 
-	if (!defaultFile) return undefined;
+	if (defaultFile) {
+		return {
+			...base,
+			file: defaultFile,
+			variant: undefined,
+			requestedVariant: undefined,
+			variantFallback: false,
+			missingBaseFallback: false,
+		};
+	}
+
+	// No base file and no active role: do not silently inject nothing.
+	// Prefer the sole variant, else the lexicographically first, and flag it.
+	const variants = group
+		.filter((file) => file.variant !== undefined)
+		.slice()
+		.sort((a, b) => (a.variant ?? "").localeCompare(b.variant ?? ""));
+	if (variants.length === 0) return undefined;
+	const chosen = variants[0];
 	return {
 		...base,
-		file: defaultFile,
-		variant: undefined,
+		file: chosen,
+		variant: chosen.variant,
 		requestedVariant: undefined,
-		variantFallback: false,
+		variantFallback: true,
+		missingBaseFallback: true,
 	};
 }
 
@@ -422,7 +479,11 @@ export function setRoleStatus(
 	activeVariants: Record<string, string>,
 	ctx: { ui: { setStatus(key: string, text: string | undefined): void } },
 ): VariantMatch | null {
-	const active = activeVariants[activeVariantKey(model.provider, model.id)];
+	// In a subagent child, the agent's role wins over the persisted `/role`
+	// selection so an e.g. deepseek worker subagent loads its `@worker` variant.
+	const active =
+		resolveSubagentVariant() ??
+		activeVariants[activeVariantKey(model.provider, model.id)];
 	const match = findVariantMatch(
 		model.provider,
 		model.id,
@@ -433,10 +494,10 @@ export function setRoleStatus(
 		ctx.ui.setStatus("model-prompts", undefined);
 		return null;
 	}
-	ctx.ui.setStatus(
-		"model-prompts",
-		`\udb82\udfc2 ${match.variant ?? "default"}`,
-	);
+	const roleLabel = match.missingBaseFallback
+		? `${match.variant ?? "?"} (no base)`
+		: (match.variant ?? "default");
+	ctx.ui.setStatus("model-prompts", `\udb82\udfc2 ${roleLabel}`);
 	return match;
 }
 

@@ -20,6 +20,7 @@ import {
 	hasModelPromptsBlock,
 	SENTINEL_BEGIN_PREFIX,
 	setRoleStatus,
+	resolveSubagentVariant,
 } from "./model-prompts.ts";
 
 function pf(stem: string, content?: string): PromptFile {
@@ -345,9 +346,21 @@ describe("findVariantMatch", () => {
 		assert.equal(findVariantMatch("wafer", "other-model", [def, precision]), undefined);
 	});
 
-	it("returns undefined when only variant files exist and no variant is active", () => {
-		// No default file to inject; a role must be chosen explicitly.
-		assert.equal(findVariantMatch("wafer", "glm-5.1", [precision, worker]), undefined);
+	it("falls back to the first variant when only variant files exist and no role is active", () => {
+		// Variant-only stems used to inject nothing silently (luna@worker class).
+		// Prefer a base `<stem>.md`; until then, surface the first variant loudly.
+		const m = findVariantMatch("wafer", "glm-5.1", [precision, worker]);
+		assert.equal(m?.file.fullPath, precision.fullPath); // precision < worker
+		assert.equal(m?.variant, "precision");
+		assert.equal(m?.variantFallback, true);
+		assert.equal(m?.missingBaseFallback, true);
+	});
+
+	it("uses the sole variant as the missing-base fallback", () => {
+		const m = findVariantMatch("wafer", "glm-5.1", [worker]);
+		assert.equal(m?.file.fullPath, worker.fullPath);
+		assert.equal(m?.variant, "worker");
+		assert.equal(m?.missingBaseFallback, true);
 	});
 });
 
@@ -521,5 +534,154 @@ assert.equal(result?.file.stem, "wafer--glm-5.1");
 		);
 		assert.deepEqual(calls[0], ["model-prompts", undefined]);
 		assert.equal(result, null);
+	});
+});
+
+describe("resolveSubagentVariant (subagent-aware role selection)", () => {
+	const PREV_CHILD = process.env.PI_SUBAGENT_CHILD;
+	const PREV_AGENT = process.env.PI_SUBAGENT_CHILD_AGENT;
+
+	function restoreEnv() {
+		if (PREV_CHILD === undefined) delete process.env.PI_SUBAGENT_CHILD;
+		else process.env.PI_SUBAGENT_CHILD = PREV_CHILD;
+		if (PREV_AGENT === undefined) delete process.env.PI_SUBAGENT_CHILD_AGENT;
+		else process.env.PI_SUBAGENT_CHILD_AGENT = PREV_AGENT;
+	}
+
+	it("returns undefined outside a subagent child", () => {
+		delete process.env.PI_SUBAGENT_CHILD;
+		delete process.env.PI_SUBAGENT_CHILD_AGENT;
+		try {
+			assert.equal(resolveSubagentVariant(), undefined);
+		} finally {
+			restoreEnv();
+		}
+	});
+
+	it("returns the child agent name when PI_SUBAGENT_CHILD=1", () => {
+		process.env.PI_SUBAGENT_CHILD = "1";
+		process.env.PI_SUBAGENT_CHILD_AGENT = "worker";
+		try {
+			assert.equal(resolveSubagentVariant(), "worker");
+		} finally {
+			restoreEnv();
+		}
+	});
+
+	it("ignores reserved agent names (list/test/default)", () => {
+		process.env.PI_SUBAGENT_CHILD = "1";
+		process.env.PI_SUBAGENT_CHILD_AGENT = "default";
+		try {
+			assert.equal(resolveSubagentVariant(), undefined);
+		} finally {
+			restoreEnv();
+		}
+	});
+
+	it("returns undefined when child flag is set but agent name is empty", () => {
+		process.env.PI_SUBAGENT_CHILD = "1";
+		delete process.env.PI_SUBAGENT_CHILD_AGENT;
+		try {
+			assert.equal(resolveSubagentVariant(), undefined);
+		} finally {
+			restoreEnv();
+		}
+	});
+});
+
+describe("setRoleStatus subagent override", () => {
+	const PREV_CHILD = process.env.PI_SUBAGENT_CHILD;
+	const PREV_AGENT = process.env.PI_SUBAGENT_CHILD_AGENT;
+
+	function restoreEnv() {
+		if (PREV_CHILD === undefined) delete process.env.PI_SUBAGENT_CHILD;
+		else process.env.PI_SUBAGENT_CHILD = PREV_CHILD;
+		if (PREV_AGENT === undefined) delete process.env.PI_SUBAGENT_CHILD_AGENT;
+		else process.env.PI_SUBAGENT_CHILD_AGENT = PREV_AGENT;
+	}
+
+	const worker: PromptFile = {
+		stem: "deepseek-v4-flash",
+		variant: "worker",
+		fullPath: "/p/deepseek-v4-flash@worker.md",
+		content: "worker body",
+	};
+	const def: PromptFile = {
+		stem: "deepseek-v4-flash",
+		fullPath: "/p/deepseek-v4-flash.md",
+		content: "default body",
+	};
+
+	function makeCtx() {
+		const calls: Array<[string, string | undefined]> = [];
+		return {
+			ctx: {
+				ui: {
+					setStatus: (key: string, text: string | undefined) => {
+						calls.push([key, text]);
+					},
+				},
+			},
+			calls,
+		};
+	}
+
+	it("prefers @worker over persisted /role when running as a worker child", () => {
+		process.env.PI_SUBAGENT_CHILD = "1";
+		process.env.PI_SUBAGENT_CHILD_AGENT = "worker";
+		const { ctx, calls } = makeCtx();
+		try {
+			const result = setRoleStatus(
+				{ provider: "deepseek", id: "deepseek-v4-flash" },
+				[def, worker],
+				// persisted role is precision — subagent agent name must win
+				{ "deepseek/deepseek-v4-flash": "precision" },
+				ctx,
+			);
+			assert.ok(result);
+			assert.equal(result?.variant, "worker");
+			assert.deepEqual(calls[0], ["model-prompts", "\udb82\udfc2 worker"]);
+		} finally {
+			restoreEnv();
+		}
+	});
+
+	it("falls back to default when @worker file is missing", () => {
+		process.env.PI_SUBAGENT_CHILD = "1";
+		process.env.PI_SUBAGENT_CHILD_AGENT = "worker";
+		const { ctx, calls } = makeCtx();
+		try {
+			const result = setRoleStatus(
+				{ provider: "deepseek", id: "deepseek-v4-flash" },
+				[def], // no @worker file
+				{},
+				ctx,
+			);
+			assert.ok(result);
+			assert.equal(result?.variant, undefined);
+			assert.equal(result?.variantFallback, true);
+			assert.equal(result?.requestedVariant, "worker");
+			assert.deepEqual(calls[0], ["model-prompts", "\udb82\udfc2 default"]);
+		} finally {
+			restoreEnv();
+		}
+	});
+
+	it("uses persisted /role when not a subagent child", () => {
+		delete process.env.PI_SUBAGENT_CHILD;
+		delete process.env.PI_SUBAGENT_CHILD_AGENT;
+		const { ctx } = makeCtx();
+		try {
+			const result = setRoleStatus(
+				{ provider: "deepseek", id: "deepseek-v4-flash" },
+				[def, worker],
+				{ "deepseek/deepseek-v4-flash": "worker" },
+				ctx,
+			);
+			assert.ok(result);
+			assert.equal(result?.variant, "worker");
+		} finally {
+			restoreEnv();
+		}
 	});
 });
